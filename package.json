@@ -6,7 +6,7 @@
   "types": "dist/index.d.ts",
   "module": "dist.esm/index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "npm run build && node dist/test",
     "build": "tsc -b",
     "docs": "typedoc"
   },
