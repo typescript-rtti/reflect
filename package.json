@@ -1,0 +1,25 @@
+{
+  "name": "@tsrtti/reflect",
+  "version": "0.0.1",
+  "description": "A unified reflection API for Typescript",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "module": "dist.esm/index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "tsc -b",
+    "docs": "typedoc"
+  },
+  "author": "William Lahti",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/reflect-metadata": "^0.1.0",
+    "chai": "^4.3.6",
+    "razmin": "^1.2.0",
+    "source-map-support": "^0.5.21",
+    "typedoc": "^0.22.12"
+  },
+  "peerDependencies": {
+    "reflect-metadata": "^0.1.13"
+  }
+}
