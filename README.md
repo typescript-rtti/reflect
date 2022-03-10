@@ -1,5 +1,5 @@
 # `reflect`
-[![Version](https://img.shields.io/npm/v/@tsrtti/reflect.svg)](https://www.npmjs.com/package/@tsrtti/reflect)
+[![Version](https://img.shields.io/npm/v/@typescript-rtti/reflect.svg)](https://www.npmjs.com/package/@typescript-rtti/reflect)
 [![CircleCI](https://circleci.com/gh/typescript-rtti/reflect/tree/main.svg?style=shield)](https://circleci.com/gh/typescript-rtti/reflect/tree/main)
 
 ## Unified Reflection
