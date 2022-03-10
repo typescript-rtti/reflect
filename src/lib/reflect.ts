@@ -1,5 +1,5 @@
-import * as Flags from './common/flags';
-import { InterfaceToken, RtVoidType, RtUnknownType, RtAnyType, RtParameter } from './common';
+import * as Flags from '../common/flags';
+import { InterfaceToken, RtVoidType, RtUnknownType, RtAnyType, RtParameter } from '../common';
 
 import { getParameterNames } from './get-parameter-names';
 import { Sealed } from './sealed';
@@ -7,20 +7,23 @@ import { Sealed } from './sealed';
 const NotProvided = Symbol();
 
 /**
- * This has no effect because the Interface is already reified.
- * Simply use the Interface as is or use reflect() on the reified interface.
- */
-export function reify(value : InterfaceToken): InterfaceToken;
-/**
  * Obtain an object which uniquely identifies an interface type.
  * You may prefer reflect<InterfaceType>() if you are writing reflect(reify<InterfaceType>()) or 
  * ReflectedClass.from(reify<InterfaceType>())
  */
-export function reify<InterfaceType>(): InterfaceToken;
-export function reify(value? : InterfaceToken | typeof NotProvided): InterfaceToken {
-    if (value === NotProvided)
+export function reify<InterfaceType>(callSite? : CallSite): InterfaceToken {
+    if (!isCallSite(callSite))
         throw new Error(`reify<T>() can only be used when project is built with the typescript-rtti transformer`);
-    return value;
+    
+    let param = reflect(callSite).typeParameters[0];
+    if (param.is('interface'))
+        return param.token;
+    
+    throw new Error(`reify<${param}>(): Type parameter must be an interface reference, not an arbitrary type`);
+}
+
+export function isCallSite(callSite : CallSite) {
+    return callSite?.TΦ === 'c';
 }
 
 function Flag(value : string) {
@@ -94,7 +97,7 @@ export const TYPE_REF_KIND_EXPANSION : Record<string, ReflectedTypeRefKind> = {
     [Flags.T_VOID]: 'void'
 };
 
-export class ReflectedTypeRef<T extends RtTypeRef = RtTypeRef> {
+export class ReflectedTypeRef<T = RtTypeRef> {
     /** @internal */
     constructor(
         private _ref : T
@@ -127,12 +130,12 @@ export class ReflectedTypeRef<T extends RtTypeRef = RtTypeRef> {
     private static kinds : Record<ReflectedTypeRefKind, Constructor<ReflectedTypeRef>> = <any>{};
 
     get kind() : ReflectedTypeRefKind {
-        let ref : RtTypeRef = this._ref;
+        let ref = this._ref;
         if (ref === null || ['undefined', 'string', 'number', 'boolean'].includes(typeof ref))
             return 'literal';
 
         if (typeof ref === 'object' && 'TΦ' in ref) 
-            return TYPE_REF_KIND_EXPANSION[ref.TΦ];
+            return TYPE_REF_KIND_EXPANSION[(<RtType><unknown>ref).TΦ];
         
         if (typeof ref === 'object')
             return 'interface';
@@ -183,10 +186,11 @@ export class ReflectedTypeRef<T extends RtTypeRef = RtTypeRef> {
         return this.kind === 'class' && (!klass || <any>this.ref === klass);
     }
 
-    isInterface(interfaceType : InterfaceToken): this is ReflectedInterfaceRef {
-        if (this.kind === 'interface')
-            return (this.ref as unknown as InterfaceToken).identity === interfaceType.identity;
-        return false;
+    isInterface(interfaceType? : InterfaceToken): this is ReflectedInterfaceRef {
+        if (interfaceType)
+            return this.isInterface() && (this.ref as unknown as InterfaceToken).identity === interfaceType.identity;
+        else
+            return this.kind === 'interface';
     }
 
     /**
@@ -221,7 +225,7 @@ export class ReflectedTypeRef<T extends RtTypeRef = RtTypeRef> {
     is(this, kind : ReflectedTypeRefKind | Constructor<any>): boolean {
         if (typeof kind === 'function')
             return this instanceof kind;
-        else if (typeof kind === 'string' && this.kind !== kind)
+        else if (typeof kind === 'string')
             return this.kind === kind;
     }
 
@@ -275,6 +279,11 @@ export class ReflectedTypeRef<T extends RtTypeRef = RtTypeRef> {
      * If the reference is not the correct type an error is thrown.
      */
     as(kind : 'any'): ReflectedAnyRef;
+    /**
+     * Assert that this type reference is a void type and cast it to ReflectedVoidRef.
+     * If the reference is not the correct type an error is thrown.
+     */
+    as(kind : 'literal'): ReflectedLiteralRef;
     /**
      * Assert that this type reference is the given ReflectedTypeRef subclass.
      * If the reference is not the correct type an error is thrown.
@@ -376,6 +385,8 @@ export class ReflectedTypeRef<T extends RtTypeRef = RtTypeRef> {
 export class ReflectedClassRef<Class> extends ReflectedTypeRef<Constructor<Class>> {
     get kind() { return 'class' as const; }
     get class() : Constructor<Class> { return <any>this.ref; }
+    get reflectedClass() { return ReflectedClass.for(this.class); }
+
     toString() { return `class ${this.class.name}`; }
 
     matchesValue(value: any, errors : Error[] = [], context? : string) {
@@ -400,6 +411,8 @@ export class ReflectedClassRef<Class> extends ReflectedTypeRef<Constructor<Class
 export class ReflectedInterfaceRef extends ReflectedTypeRef<InterfaceToken> {
     get kind() { return 'interface' as const; }
     get token() : InterfaceToken { return this.ref; }
+    get reflectedInterface() { return ReflectedClass.for(this.token); }
+
     toString() { return `interface ${this.token.name}`; }
 
     matchesValue(value: any, errors : Error[] = [], context? : string) {
@@ -408,9 +421,9 @@ export class ReflectedInterfaceRef extends ReflectedTypeRef<InterfaceToken> {
 }
 
 @ReflectedTypeRef.Kind('literal')
-export class ReflectedLiteralRef<Class> extends ReflectedTypeRef<Constructor<Class>> { // TODO generics here
+export class ReflectedLiteralRef<Class = any> extends ReflectedTypeRef<Class> {
     get kind() { return 'literal' as const; }
-    get value() { return <any>this.ref; }
+    get value() { return <Class>this.ref; }
     toString() { return JSON.stringify(this.value); }
 
     matchesValue(value: any, errors?: Error[], context?: string): boolean {
@@ -431,7 +444,7 @@ export class ReflectedUnionRef extends ReflectedTypeRef<RtUnionType> {
     }
 
     matchesValue(value: any, errors : Error[] = [], context? : string) {
-        return this.types.every(t => t.matchesValue(value, errors, context));
+        return this.types.some(t => t.matchesValue(value, errors, context));
     }
 }
 
@@ -448,7 +461,7 @@ export class ReflectedIntersectionRef extends ReflectedTypeRef<RtIntersectionTyp
     }
 
     matchesValue(value: any, errors : Error[] = [], context? : string) {
-        return this.types.some(t => t.matchesValue(value, errors, context));
+        return this.types.every(t => t.matchesValue(value, errors, context));
     }
 }
 
@@ -605,6 +618,7 @@ export class ReflectedFlags {
     @Flag(Flags.F_OPTIONAL) isOptional : boolean;
     @Flag(Flags.F_ASYNC) isAsync : boolean;
     @Flag(Flags.F_EXPORTED) isExported : boolean;
+    @Flag(Flags.F_INFERRED) isInferred : boolean;
 
     toString() {
         return Object.keys(this.propertyToFlag)
@@ -621,7 +635,8 @@ export type Visibility = 'public' | 'private' | 'protected';
  */
 export class ReflectedParameter<ValueT = any> {
     constructor(
-        readonly rawMetadata : RtParameter
+        readonly rawMetadata : RtParameter,
+        readonly index : number
     ) {
     }
 
@@ -668,7 +683,7 @@ export class ReflectedParameter<ValueT = any> {
      * Use evaluateInitializer() to properly invoke the initializer.
      */
     get initializer(): () => ValueT {
-        return this.rawMetadata.t;
+        return this.rawMetadata.v;
     }
 
     /**
@@ -691,10 +706,14 @@ export class ReflectedParameter<ValueT = any> {
  export class ReflectedMethodParameter extends ReflectedParameter {
     constructor(
         readonly method : ReflectedMethod,
-        readonly rawMetadata : RtParameter
+        readonly rawMetadata : RtParameter,
+        readonly index : number,
     ) {
-        super(rawMetadata);
+        super(rawMetadata, index);
     }
+    
+    get parent() { return this.method; }
+    get class() { return this.method.class; }
 }
 
 /**
@@ -703,10 +722,13 @@ export class ReflectedParameter<ValueT = any> {
  export class ReflectedFunctionParameter extends ReflectedParameter {
     constructor(
         readonly func : ReflectedFunction,
-        readonly rawMetadata : RtParameter
+        readonly rawMetadata : RtParameter,
+        readonly index : number
     ) {
-        super(rawMetadata);
+        super(rawMetadata, index);
     }
+
+    get parent() { return this.func; }
 }
 
 /**
@@ -715,13 +737,16 @@ export class ReflectedParameter<ValueT = any> {
 export class ReflectedConstructorParameter extends ReflectedParameter {
     constructor(
         readonly reflectedClass : ReflectedClass,
-        readonly rawMetadata : RtParameter
+        readonly rawMetadata : RtParameter,
+        readonly index : number
     ) {
-        super(rawMetadata);
+        super(rawMetadata, index);
         this._class = reflectedClass;
     }
 
     private _class : ReflectedClass;
+
+    get parent() { return this.class; }
 
     /**
      * Retrieve the reflected class that this constructor parameter is defined on.
@@ -784,7 +809,7 @@ export class ReflectedConstructorParameter extends ReflectedParameter {
 /**
  * Reflection data for a class member
  */
-export class ReflectedMember {
+export class ReflectedMember implements ReflectedMetadataTarget {
     constructor(
         reflectedClass : ReflectedClass,
         readonly name : string,
@@ -814,6 +839,25 @@ export class ReflectedMember {
      */
     defineMetadata<T = any>(key : string, value : T) {
         Reflect.defineMetadata(key, value, this.host, this.name);
+        return value;
+    }
+
+    /**
+     * Get or define a metadata item for this member. If the key already exists, its 
+     * value is returned without calling the passed function. Otherwise the passed function 
+     * is called and its value is saved to the given metadata key.
+     * 
+     * @param key The metadata key to fetch
+     * @param definer A function which will define the value of the metadata 
+     * @returns The value of the existing metadata key or the new value returned by the definer function
+     *          which will also be defined as the appropriate metadata item on this member.
+     */
+    metadata<T = any>(key : string, definer : () => T) : T {
+        if (this.hasMetadata(key))
+            return this.getMetadata(key);
+        let value = definer();
+        this.defineMetadata(key, value);
+        return value;
     }
 
     /**
@@ -907,7 +951,7 @@ export class ReflectedMember {
     }
 }
 
-export class ReflectedFunction<T extends Function = Function> {
+export class ReflectedFunction<T extends Function = Function> implements ReflectedMetadataTarget {
     private constructor(
         readonly func : T
     ) {
@@ -915,7 +959,7 @@ export class ReflectedFunction<T extends Function = Function> {
 
     private _flags : ReflectedFlags;
     private _returnType : ReflectedTypeRef;
-    private _RtParameter : RtParameter[];
+    private _rawParameterMetadata : RtParameter[];
     private _parameters : ReflectedFunctionParameter[];
 
     private static reflectedFunctions = new WeakMap<object, ReflectedFunction>();
@@ -975,6 +1019,25 @@ export class ReflectedFunction<T extends Function = Function> {
      */
     defineMetadata<T = any>(key : string, value : T) {
         Reflect.defineMetadata(key, value, this.func);
+        return value;
+    }
+    
+    /**
+     * Get or define a metadata item for this function. If the key already exists, its 
+     * value is returned without calling the passed function. Otherwise the passed function 
+     * is called and its value is saved to the given metadata key.
+     * 
+     * @param key The metadata key to fetch
+     * @param definer A function which will define the value of the metadata 
+     * @returns The value of the existing metadata key or the new value returned by the definer function
+     *          which will also be defined as the appropriate metadata item on this function.
+     */
+     metadata<T = any>(key : string, definer : () => T) : T {
+        if (this.hasMetadata(key))
+            return this.getMetadata(key);
+        let value = definer();
+        this.defineMetadata(key, value);
+        return value;
     }
 
     /**
@@ -990,18 +1053,18 @@ export class ReflectedFunction<T extends Function = Function> {
     /**
      * @internal
      */
-    get RtParameter(): RtParameter[] {
-        if (this._RtParameter)
-            return this._RtParameter;
+    get rawParameterMetadata(): RtParameter[] {
+        if (this._rawParameterMetadata)
+            return this._rawParameterMetadata;
         
-        return this._RtParameter = this.getMetadata('rt:p');
+        return this._rawParameterMetadata = this.getMetadata('rt:p');
     }
 
     /**
      * Names of the parameters for this function.
      */
     get parameterNames() {
-        return this.RtParameter.map(x => x.n);
+        return this.rawParameterMetadata.map(x => x.n);
     }
 
     private _parameterTypes : ReflectedTypeRef[];
@@ -1013,24 +1076,26 @@ export class ReflectedFunction<T extends Function = Function> {
         if (this._parameterTypes !== undefined)
             return this._parameterTypes;
         
-        if (this.RtParameter !== undefined) {
-            return this._parameterTypes = this.RtParameter.map(param => {
+        if (this.rawParameterMetadata !== undefined) {
+            return this._parameterTypes = this.rawParameterMetadata.map(param => {
                 return param.t ? ReflectedTypeRef.createFromRtRef(param.t()) : ReflectedTypeRef.createUnknown();
             });
         } else if (this.hasMetadata('design:paramtypes')) {
             let params : Function[] = this.getMetadata('design:paramtypes');
-            return this._parameterTypes = params.map(t => ReflectedTypeRef.createFromRtRef(() => t));
+            return this._parameterTypes = (params || []).map(t => ReflectedTypeRef.createFromRtRef(() => t));
         }
+
+        return [];
     }
 
     /**
      * Retrieve the set of reflected parameters for this method.
      */
-    get parameters() {
+    get parameters(): ReflectedFunctionParameter[] {
         if (this._parameters)
             return this._parameters;
         
-        return this._parameters = this.RtParameter.map(x => new ReflectedFunctionParameter(this, x));
+        return this._parameters = this.rawParameterMetadata.map((x, i) => new ReflectedFunctionParameter(this, x, i));
     }
 
     /**
@@ -1062,6 +1127,14 @@ export class ReflectedFunction<T extends Function = Function> {
     }
 
     /**
+     * True if the return type was inferred using the Typescript type checker. False if 
+     * the return type was defined explicitly.
+     */
+    get returnTypeInferred() {
+        return this.flags.isInferred;
+    }
+
+    /**
      * True if this function is declared as async.
      */
     get isAsync() {
@@ -1074,7 +1147,7 @@ export class ReflectedFunction<T extends Function = Function> {
  */
 export class ReflectedMethod<T extends Function = Function> extends ReflectedMember {
     private _returnType : ReflectedTypeRef;
-    private _RtParameter : RtParameter[];
+    private _rawParameterMetadata : RtParameter[];
     private _parameters : ReflectedMethodParameter[];
 
     matchesValue(object, errors : Error[] = [], context? : string) {
@@ -1091,11 +1164,11 @@ export class ReflectedMethod<T extends Function = Function> extends ReflectedMem
     /**
      * @internal
      */
-    get RtParameter(): RtParameter[] {
-        if (this._RtParameter)
-            return this._RtParameter;
+    get rawParameterMetadata(): RtParameter[] {
+        if (this._rawParameterMetadata)
+            return this._rawParameterMetadata;
         
-        return this._RtParameter = this.getMetadata('rt:p');
+        return this._rawParameterMetadata = this.getMetadata('rt:p');
     }
 
     /**
@@ -1115,14 +1188,14 @@ export class ReflectedMethod<T extends Function = Function> extends ReflectedMem
         if (!host)
             throw new TypeError(`The method has a defined host, but it is null/undefined`);
         
-        return ReflectedClass.for(host).getMethod(method.name);
+        return ReflectedClass.for(host()).getMethod(method.name);
     }
 
     /**
      * Retrieve an array with the parameter names for this method.
      */
     get parameterNames() {
-        return this.RtParameter.map(x => x.n);
+        return this.rawParameterMetadata.map(x => x.n);
     }
 
     private _parameterTypes : ReflectedTypeRef[];
@@ -1134,14 +1207,16 @@ export class ReflectedMethod<T extends Function = Function> extends ReflectedMem
         if (this._parameterTypes !== undefined)
             return this._parameterTypes;
         
-        if (this.RtParameter !== undefined) {
-            return this._parameterTypes = this.RtParameter.map(param => {
+        if (this.rawParameterMetadata !== undefined) {
+            return this._parameterTypes = this.rawParameterMetadata.map(param => {
                 return param.t ? ReflectedTypeRef.createFromRtRef(param.t()) : ReflectedTypeRef.createUnknown();
             });
         } else if (this.hasMetadata('design:paramtypes')) {
             let params : Function[] = this.getMetadata('design:paramtypes');
-            return this._parameterTypes = params.map(t => ReflectedTypeRef.createFromRtRef(() => t));
+            return this._parameterTypes = (params || []).map(t => ReflectedTypeRef.createFromRtRef(() => t));
         }
+
+        return [];
     }
 
     /**
@@ -1151,7 +1226,7 @@ export class ReflectedMethod<T extends Function = Function> extends ReflectedMem
         if (this._parameters)
             return this._parameters;
         
-        return this._parameters = this.RtParameter.map(x => new ReflectedMethodParameter(this, x));
+        return this._parameters = this.rawParameterMetadata.map((x, i) => new ReflectedMethodParameter(this, x, i));
     }
 
     /**
@@ -1180,6 +1255,14 @@ export class ReflectedMethod<T extends Function = Function> extends ReflectedMem
             return ReflectedTypeRef.createUnknown();
         
         return this._returnType = ReflectedTypeRef.createFromRtRef(typeResolver());
+    }
+
+    /**
+     * True if the return type was inferred using the Typescript type checker. False if 
+     * the return type was defined explicitly.
+     */
+    get returnTypeInferred() {
+        return this.flags.isInferred;
     }
 
     /**
@@ -1263,12 +1346,48 @@ function hasAllFlags(value, desiredFlags : string[]) {
     return desiredFlags.every(x => flags.includes(x));
 }
 
+export interface ReflectedMetadataTarget {
+    /**
+     * Check if the target has the given metadata key defined.
+     * @param key 
+     * @returns 
+     */
+    hasMetadata(key : string): boolean;
+
+    /**
+     * Get the specified metadata key. 
+     * @param key 
+     * @returns 
+     */
+    getMetadata<T = any>(key : string): T;
+
+    /**
+     * Define a metadata key on this class. 
+     * @param key 
+     * @param value 
+     * @returns 
+     */
+    defineMetadata<T = any>(key : string, value : T): T;
+
+    /**
+     * Get or define a metadata item for this target. If the key already exists, its 
+     * value is returned without calling the passed function. Otherwise the passed function 
+     * is called and its value is saved to the given metadata key.
+     * 
+     * @param key The metadata key to fetch
+     * @param definer A function which will define the value of the metadata 
+     * @returns The value of the existing metadata key or the new value returned by the definer function
+     *          which will also be defined as the appropriate metadata item on this target.
+     */
+     metadata<T = any>(key : string, definer : () => T) : T;
+}
+
 /**
  * Provides access to the known runtime type metadata for a particular class 
  * or Interface value (as obtained by reify<InterfaceT>()). 
  */
 @Sealed()
-export class ReflectedClass<ClassT = any> {
+export class ReflectedClass<ClassT = any> implements ReflectedMetadataTarget {
     /**
      * Constructs a new ReflectedClass. Use ReflectedClass.for() to obtain a ReflectedClass.
      */
@@ -1332,7 +1451,7 @@ export class ReflectedClass<ClassT = any> {
     private _ownMethodNames : string[];
     private _methodNames : string[];
     private _super : ReflectedClass;
-    private _RtParameter : RtParameter[];
+    private _rawParameterMetadata : RtParameter[];
     private _parameters : ReflectedConstructorParameter[];
     private _ownProperties : ReflectedProperty[];
     private _properties : ReflectedProperty[];
@@ -1467,6 +1586,24 @@ export class ReflectedClass<ClassT = any> {
      */
     defineMetadata<T = any>(key : string, value : T): T {
         Reflect.defineMetadata(key, value, this.class);
+        return value;
+    }
+
+    /**
+     * Get or define a metadata item for this class/interface. If the key already exists, its 
+     * value is returned without calling the passed function. Otherwise the passed function 
+     * is called and its value is saved to the given metadata key.
+     * 
+     * @param key The metadata key to fetch
+     * @param definer A function which will define the value of the metadata 
+     * @returns The value of the existing metadata key or the new value returned by the definer function
+     *          which will also be defined as the appropriate metadata item on this class/interface.
+     */
+     metadata<T = any>(key : string, definer : () => T) : T {
+        if (this.hasMetadata(key))
+            return this.getMetadata(key);
+        let value = definer();
+        this.defineMetadata(key, value);
         return value;
     }
 
@@ -1750,9 +1887,9 @@ export class ReflectedClass<ClassT = any> {
             return this._properties = this.ownProperties;
     }
 
-    private get RtParameter(): RtParameter[] {
-        if (this._RtParameter)
-            return this._RtParameter;
+    private get rawParameterMetadata(): RtParameter[] {
+        if (this._rawParameterMetadata)
+            return this._rawParameterMetadata;
         
         let rawParams = this.getMetadata('rt:p');
         if (rawParams === void 0 && this.hasMetadata('design:paramtypes')) {
@@ -1761,14 +1898,14 @@ export class ReflectedClass<ClassT = any> {
             rawParams = names.map((n, i) => ({ n, t: () => types[i] }));
         }
 
-        return this._RtParameter = rawParams || [];
+        return this._rawParameterMetadata = rawParams || [];
     }
 
     /**
      * Retrieve an array of the parameter names for this class's constructor.
      */
     get parameterNames() {
-        return this.RtParameter.map(x => x.n);
+        return this.rawParameterMetadata.map(x => x.n);
     }
 
     /**
@@ -1776,7 +1913,7 @@ export class ReflectedClass<ClassT = any> {
      * constructor.
      */
     get parameterTypes() {
-        return this.RtParameter.map(x => x.t);
+        return this.rawParameterMetadata.map(x => x.t);
     }
 
     /**
@@ -1786,7 +1923,7 @@ export class ReflectedClass<ClassT = any> {
         if (this._parameters)
             return this._parameters;
         
-        return this._parameters = this.RtParameter.map(x => new ReflectedConstructorParameter(<any>this, x));
+        return this._parameters = this.rawParameterMetadata.map((x, i) => new ReflectedConstructorParameter(<any>this, x, i));
     }
 
     /**
@@ -1945,10 +2082,17 @@ export function matchesShape(value, interfaceType : InterfaceToken | Constructor
 }
 
 /**
- * Get the reflected interface object for the given interface (identified by T)
- * @returns The reflected interface
+ * Get the reflected call site
+ * @returns The reflected call site
  */
-export function reflect<T>() : ReflectedClass<InterfaceToken<T> | Constructor<T>>;
+ export function reflect(value : CallSite) : ReflectedCallSite;
+/**
+ * Get the reflected interface object for the given interface (identified by T)
+ * @param callSite Do not pass a value here. This opts in to call site reflection.
+ * @returns The reflected interface
+ * @rtti:callsite 1
+ */
+export function reflect<T>(unused? : never, callSite? : CallSite) : ReflectedTypeRef;
 /**
  * Get the reflected class for the given constructor or instance.
  * @param value A constructor, Interface value, or an instance of a class
@@ -1957,9 +2101,26 @@ export function reflect<T>() : ReflectedClass<InterfaceToken<T> | Constructor<T>
 export function reflect<T>(value : Constructor<T>) : ReflectedClass<Constructor<T>>;
 export function reflect<T extends Function>(value : T) : (ReflectedFunction<T> | ReflectedMethod<T>);
 export function reflect<T>(value : T) : ReflectedClass<Constructor<T>>;
-export function reflect(value : any = NotProvided) {
-    if (value === NotProvided) {
+/**
+ * @rtti:callsite 1
+ */
+export function reflect(value : any = NotProvided, callSite? : CallSite) {
+    if (value === NotProvided && !callSite) {
         throw new Error(`reflect<T>() can only be used when project is built with the typescript-rtti transformer`);
+    }
+
+    if (!value)
+        throw new TypeError(`Could not reflect on null/undefined`);
+
+    if (isCallSite(value))
+        return new ReflectedCallSite(value);
+
+    if (value === NotProvided && isCallSite(callSite))
+        return new ReflectedCallSite(callSite).typeParameters[0];
+
+    if (!['object', 'function'].includes(typeof value)) {
+        // Primitive value
+        return reflect(value.constructor);
     }
 
     let flags = getFlags(value);
@@ -1973,4 +2134,58 @@ export function reflect(value : any = NotProvided) {
         return ReflectedFunction.for(value);
     
     return ReflectedClass.for(value);
+}
+
+export interface CallSite {
+    TΦ: 'c'
+}
+
+interface RtCallSite {
+    TΦ: typeof Flags.T_CALLSITE;
+    t: RtTypeRef;
+    p: RtTypeRef[];
+    tp: RtTypeRef[];
+    r: RtTypeRef;
+}
+
+export class ReflectedCallSite {
+    constructor(callSite : CallSite) {
+        this.callSite = <RtCallSite>callSite;
+    }
+
+    private callSite : RtCallSite;
+
+    private _parameters : ReflectedTypeRef[];
+
+    get parameters() {
+        if (!this._parameters)
+            this._parameters = this.callSite.p.map(x => ReflectedTypeRef.createFromRtRef(x));
+        return this._parameters;
+    }
+
+    private _typeParameters : ReflectedTypeRef[];
+
+    get typeParameters() {
+        if (!this._typeParameters) {
+            this._typeParameters = this.callSite.tp.map(x => ReflectedTypeRef.createFromRtRef(x));
+        }
+
+        return this._typeParameters;
+    }
+
+    // private _target : ReflectedTypeRef;
+
+    // get target() {
+    //     if (!this._target)
+    //         this._target = ReflectedTypeRef.createFromRtRef(this.callSite.t);
+    //     return this._target;
+    // }
+
+    // private _return : ReflectedTypeRef;
+
+    // get return() {
+    //     if (!this._return)
+    //         this._return = ReflectedTypeRef.createFromRtRef(this.callSite.r);
+    //     return this._return;
+    // }
 }

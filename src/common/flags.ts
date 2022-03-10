@@ -15,6 +15,7 @@ export const F_ARROW_FUNCTION = '>';
 export const F_OPTIONAL       = '?';
 export const F_ASYNC          = 'a';
 export const F_EXPORTED       = 'e';
+export const F_INFERRED       = '.';
 
 export const T_UNION          = '|';
 export const T_INTERSECTION   = '&';
@@ -30,6 +31,8 @@ export const T_GENERIC        = 'g';
 export const T_MAPPED         = 'm';
 export const T_TRUE           = '1';
 export const T_FALSE          = '0';
+export const T_CALLSITE       = 'c';
+export const T_STAND_IN        = '5';
 
 export type RtSimpleType<T>   = { TΦ: T };
 export type RtVoidType        = RtSimpleType<typeof T_VOID>;

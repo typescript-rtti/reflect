@@ -1,8 +1,8 @@
 import { describe } from "razmin";
 import { expect } from "chai";
 import { ReflectedClass } from "./reflect";
-import { InterfaceToken } from "./common";
-import * as flags from './common/flags';
+import { InterfaceToken } from "../common";
+import * as flags from '../common/flags';
 import { reflect, ReflectedFunction, ReflectedMethod } from "./reflect";
 
 
@@ -77,6 +77,9 @@ describe('ReflectedClass', it => {
         expect(a.name).to.equal('a');
         expect(b.type.isClass(String)).to.be.true;
         expect(b.name).to.equal('b');
+    });
+    it('can reflect on a primitive value', () => {
+        expect(reflect(123) instanceof ReflectedClass).to.be.true;
     });
     it('can reflect constructor parameters from design:paramtypes', () => {
         class A {
@@ -206,6 +209,20 @@ describe('ReflectedMethod', it => {
         Reflect.defineMetadata('design:returntype', String, B.prototype, 'foo');
         let refClass = ReflectedClass.new(B);
         expect(refClass.ownMethods.find(x => x.name === 'foo').returnType.isClass(String)).to.be.true;
+    })
+    it('reflects whether the return type is inferred', () => {
+        class B {
+            foo() { }
+            bar() { }
+        }; undecorate(B.prototype, 'foo');
+
+        Reflect.defineMetadata('rt:f', flags.F_INFERRED, B.prototype, 'foo');
+        Reflect.defineMetadata('rt:f', '', B.prototype, 'bar');
+        Reflect.defineMetadata('rt:m', ['foo', 'bar'], B);
+
+        let refClass = ReflectedClass.new(B);
+        expect(refClass.ownMethods.find(x => x.name === 'foo').returnTypeInferred).to.be.true;
+        expect(refClass.ownMethods.find(x => x.name === 'bar').returnTypeInferred).to.be.false;
     })
     it('reflects public', () => {
         class B {}
@@ -559,6 +576,10 @@ describe('reflect(value)', it => {
         class A { }
         expect(reflect(A)).to.be.an.instanceOf(ReflectedClass);
     });
+    it('returns a ReflectedClass even if callSite is passed when passing a class', () => {
+        class A { }
+        expect((reflect as any)(<any>A, { TΦ: 'c', p: [], tp: [] })).to.be.an.instanceOf(ReflectedClass);
+    });
     it('returns a ReflectedClass when passing in an instance', () => {
         class A { }
         let a = new A();
@@ -582,7 +603,7 @@ describe('reflect(value)', it => {
         Reflect.defineMetadata('rt:m', ['foo'], A);
         Reflect.defineMetadata('rt:f', `${flags.F_METHOD}`, A, 'foo');
         Reflect.defineMetadata('rt:f', `${flags.F_METHOD}`, A.prototype.foo);
-        Reflect.defineMetadata('rt:h', A, A.prototype.foo);
+        Reflect.defineMetadata('rt:h', () => A, A.prototype.foo);
 
         expect(reflect(A.prototype.foo)).to.be.an.instanceOf(ReflectedMethod);
     });
@@ -592,7 +613,7 @@ describe('reflect(value)', it => {
         Reflect.defineMetadata('rt:m', ['foo'], A);
         Reflect.defineMetadata('rt:f', `${flags.F_METHOD}`, A, 'foo');
         Reflect.defineMetadata('rt:f', `${flags.F_METHOD}${flags.F_STATIC}`, A.foo);
-        Reflect.defineMetadata('rt:h', A, A.foo);
+        Reflect.defineMetadata('rt:h', () => A, A.foo);
 
         expect(reflect(A.foo)).to.be.an.instanceOf(ReflectedMethod);
     });
