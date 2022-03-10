@@ -1,6 +1,6 @@
 {
   "name": "@typescript-rtti/reflect",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "A unified reflection API for Typescript",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -17,7 +17,13 @@
   "author": "William Lahti",
   "license": "MIT",
   "keywords": [
-    "reflection", "reflect", "introspection", "introspect", "types", "runtime types", "rtti"
+    "reflection",
+    "reflect",
+    "introspection",
+    "introspect",
+    "types",
+    "runtime types",
+    "rtti"
   ],
   "repository": {
     "url": "https://github.com/typescript-rtti/reflect"
