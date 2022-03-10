@@ -13,6 +13,9 @@
   },
   "author": "William Lahti",
   "license": "MIT",
+  "keywords": [
+    "reflection", "reflect", "introspection", "introspect", "types", "runtime types", "rtti"
+  ],
   "devDependencies": {
     "@types/reflect-metadata": "^0.1.0",
     "chai": "^4.3.6",
