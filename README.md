@@ -1,4 +1,4 @@
-# `reflect`
+# `@typescript-rtti/reflect`
 [![Version](https://img.shields.io/npm/v/@typescript-rtti/reflect.svg)](https://www.npmjs.com/package/@typescript-rtti/reflect)
 [![CircleCI](https://circleci.com/gh/typescript-rtti/reflect/tree/main.svg?style=shield)](https://circleci.com/gh/typescript-rtti/reflect/tree/main)
 
