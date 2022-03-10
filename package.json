@@ -1,5 +1,5 @@
 {
-  "name": "@tsrtti/reflect",
+  "name": "@typescript-rtti/reflect",
   "version": "0.0.1",
   "description": "A unified reflection API for Typescript",
   "main": "dist/index.js",
