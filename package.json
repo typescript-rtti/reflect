@@ -16,6 +16,9 @@
   "keywords": [
     "reflection", "reflect", "introspection", "introspect", "types", "runtime types", "rtti"
   ],
+  "repository": {
+    "url": "https://github.com/typescript-rtti/reflect"
+  },
   "devDependencies": {
     "@types/reflect-metadata": "^0.1.0",
     "chai": "^4.3.6",
