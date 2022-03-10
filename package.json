@@ -8,7 +8,8 @@
   "scripts": {
     "test": "npm run build && nyc node dist/test",
     "build": "tsc -b",
-    "docs": "typedoc"
+    "docs": "typedoc",
+    "prepublishOnly": "npm test"
   },
   "author": "William Lahti",
   "license": "MIT",
